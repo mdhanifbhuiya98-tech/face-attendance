@@ -207,18 +207,22 @@ async function camStart(v){
 const ear=p=>{const d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);return(d(p[1],p[5])+d(p[2],p[4]))/(2*d(p[0],p[3]))};
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 // বেসিক লাইভনেস: চোখের পলক না ফেললে ছবি নেওয়া হয় না (ভিডিও রিপ্লে ঠেকাতে যথেষ্ট নয়)
+function blinkDetector(){let base=0,low=0,done=false;return e=>{base=base===0?e:Math.max(base*0.995,e);if(e<base*0.78){low++}else{if(low>=1)done=true;low=0}return done}}
 async function grab(v,set,need){
-  const o=new faceapi.TinyFaceDetectorOptions({inputSize:320});let closed=false,blinked=false,out=[],t0=Date.now();
-  set('Look at the camera and blink once');
-  while(Date.now()-t0<30000){
-    const r=await faceapi.detectSingleFace(v,o).withFaceLandmarks().withFaceDescriptor();
-    if(r){const e=(ear(r.landmarks.getLeftEye())+ear(r.landmarks.getRightEye()))/2;
-      if(e<0.2)closed=true;else if(closed&&e>0.25)blinked=true;
-      if(blinked){out.push(Array.from(r.descriptor));set('Captured '+out.length+'/'+need);if(out.length>=need)return out;await wait(400)}}
-    else set('No face found. Look straight at the camera.');
-    await wait(80);
+  const o=new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.4});
+  const bd=blinkDetector();let blinked=false,out=[],t0=Date.now();
+  while(Date.now()-t0<45000){
+    const r=await faceapi.detectSingleFace(v,o).withFaceLandmarks();
+    if(!r){set('No face found. Look straight at the camera, good light.');await wait(50);continue}
+    if(!blinked){
+      const e=(ear(r.landmarks.getLeftEye())+ear(r.landmarks.getRightEye()))/2;
+      blinked=bd(e);
+      if(!blinked){set('Face found. Now blink once, slowly. (eye openness '+e.toFixed(2)+')');continue}
+    }
+    const f=await faceapi.detectSingleFace(v,o).withFaceLandmarks().withFaceDescriptor();
+    if(f){out.push(Array.from(f.descriptor));set('Captured '+out.length+'/'+need);if(out.length>=need)return out;await wait(400)}
   }
-  throw new Error('Timed out. Blink once while looking at the camera.');
+  throw new Error(blinked?'Could not capture a clear face. Try better light.':'No blink detected. Blink once slowly while looking at the camera.');
 }
 const stop=s=>s&&s.getTracks().forEach(x=>x.stop());
 const info=(id,x)=>msg(id,x,true);
