@@ -98,11 +98,14 @@ async function dispatch(action: string, p: any, u: any, q: any): Promise<any> {
     }
     case 'faceAttendance': {
       need(u, P.HR);
-      if (!validDescriptor(p.descriptor)) throw new Error('Invalid face data');
+      // একাধিক ফ্রেম (শুরুতে ও চ্যালেঞ্জ শেষে) একই কর্মীর সাথে মিলতে হবে
+      const ds = Array.isArray(p.descriptors) ? p.descriptors : [];
+      if (ds.length < 2 || ds.length > 3 || !ds.every(validDescriptor)) throw new Error('Invalid face data');
       const rows = await q`SELECT employee_id, template FROM face_templates`;
-      const m = bestMatch(p.descriptor, rows.map((r: any) => ({ employee_id: r.employee_id, samples: decryptJson(r.template) })), threshold());
-      if (!m.match) throw new Error('Face not recognised');
-      return callSheets('mark', { employee_id: m.employee_id, method: 'face', actor: u.email });
+      const tpls = rows.map((r: any) => ({ employee_id: r.employee_id, samples: decryptJson(r.template) }));
+      const ids = ds.map((d: number[]) => { const m = bestMatch(d, tpls, threshold()); return m.match ? m.employee_id : null; });
+      if (!ids[0] || ids.some((x: any) => x !== ids[0])) throw new Error('Face not recognised');
+      return callSheets('mark', { employee_id: ids[0], method: 'face', actor: u.email });
     }
 
     case 'listUsers': {
