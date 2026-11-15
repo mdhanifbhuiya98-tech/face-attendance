@@ -117,7 +117,7 @@ async function toggleUser(id,active){try{await api('setUserActive',{id,active});
 
 function vAccount(){
   $('view').innerHTML=`<div class="grid gap-5 md:grid-cols-2"><div class="space-y-3 rounded-xl border border-slate-200 bg-white p-4"><h2 class="font-semibold">${t('changePw')}</h2>${field('op',t('oldPw'),'password')}${field('np',t('newPw'),'password')}<button id="cp" class="btn w-full">${t('changePw')}</button><div id="m"></div></div>
-  <div class="space-y-3 rounded-xl border border-slate-200 bg-white p-4"><h2 class="font-semibold">${t('camTitle')}</h2><p class="text-sm text-slate-600">${t('camText')}</p><video id="vid" class="hidden w-full rounded-lg bg-black" playsinline muted></video><button id="cam" class="btn w-full">${t('camBtn')}</button><div id="m2"></div></div></div>`;
+  <div class="space-y-3 rounded-xl border border-slate-200 bg-white p-4"><h2 class="font-semibold">${t('camTitle')}</h2><p class="text-sm text-slate-600">${t('camText')}</p><video id="vid" class="hidden w-full rounded-lg bg-black" style="transform:scaleX(-1)" playsinline muted></video><button id="cam" class="btn w-full">${t('camBtn')}</button><div id="m2"></div></div></div>`;
   $('cp').onclick=()=>run($('cp'),'m',async()=>{await api('changePassword',{oldPassword:$('op').value,newPassword:$('np').value});$('op').value=$('np').value='';msg('m',t('pwChanged'),true)});
   $('cam').onclick=async()=>{
     try{
@@ -206,23 +206,64 @@ async function camStart(v){
 }
 const ear=p=>{const d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);return(d(p[1],p[5])+d(p[2],p[4]))/(2*d(p[0],p[3]))};
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
-// বেসিক লাইভনেস: চোখের পলক না ফেললে ছবি নেওয়া হয় না (ভিডিও রিপ্লে ঠেকাতে যথেষ্ট নয়)
-function blinkDetector(){let base=0,low=0,done=false;return e=>{base=base===0?e:Math.max(base*0.995,e);if(e<base*0.78){low++}else{if(low>=1)done=true;low=0}return done}}
-async function grab(v,set,need){
+// লাইভনেস (বেসিক): চোখের পলক অথবা মাথা একপাশে ঘুরিয়ে আবার সামনে আনা। ভিডিও রিপ্লে ঠেকাতে যথেষ্ট নয়।
+function blinkDetector(){let base=0,low=0,done=false;return e=>{base=base===0?e:Math.max(base*0.995,e);if(e<base*0.8){low++}else{if(low>=1)done=true;low=0}return done}}
+const yawOf=l=>{const P=l.positions;return (P[30].x-P[0].x)/(P[16].x-P[0].x)};
+function liveDetector(){const b=blinkDetector();let turned=false,done=false;
+  return r=>{const e=(ear(r.landmarks.getLeftEye())+ear(r.landmarks.getRightEye()))/2,y=yawOf(r.landmarks);
+    if(b(e))done=true;
+    if(y<0.32||y>0.68)turned=true;else if(turned&&y>0.4&&y<0.6)done=true;
+    return {done,e,y}}}
+// live=false: HR-এর সামনে তত্ত্বাবধানে এনরোলমেন্ট (চ্যালেঞ্জ ছাড়া); live=true: হাজিরার সময় চ্যালেঞ্জ লাগে
+async function grab(v,set,need,live){
   const o=new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.4});
-  const bd=blinkDetector();let blinked=false,out=[],t0=Date.now();
+  const ld=liveDetector();let ok=!live,out=[],t0=Date.now();
   while(Date.now()-t0<45000){
-    const r=await faceapi.detectSingleFace(v,o).withFaceLandmarks();
-    if(!r){set('No face found. Look straight at the camera, good light.');await wait(50);continue}
-    if(!blinked){
-      const e=(ear(r.landmarks.getLeftEye())+ear(r.landmarks.getRightEye()))/2;
-      blinked=bd(e);
-      if(!blinked){set('Face found. Now blink once, slowly. (eye openness '+e.toFixed(2)+')');continue}
+    if(!ok){
+      const r=await faceapi.detectSingleFace(v,o).withFaceLandmarks();
+      if(!r){set('No face found. Look straight at the camera, good light.');await wait(50);continue}
+      const s=ld(r);ok=s.done;
+      if(!ok){set('Blink once OR turn your head to one side and back. (eye '+s.e.toFixed(2)+', turn '+s.y.toFixed(2)+')');continue}
     }
     const f=await faceapi.detectSingleFace(v,o).withFaceLandmarks().withFaceDescriptor();
-    if(f){out.push(Array.from(f.descriptor));set('Captured '+out.length+'/'+need);if(out.length>=need)return out;await wait(400)}
+    if(!f){set('No face found. Look straight at the camera.');await wait(100);continue}
+    out.push(Array.from(f.descriptor));set('Captured '+out.length+'/'+need+(live?'':' – hold still, slightly vary your angle'));
+    if(out.length>=need)return out;await wait(live?400:700);
   }
-  throw new Error(blinked?'Could not capture a clear face. Try better light.':'No blink detected. Blink once slowly while looking at the camera.');
+  throw new Error(live?'Liveness check not completed. Blink slowly or turn your head to the side and back.':'Could not capture a clear face. Try better light.');
+}
+
+// --- র‍্যান্ডম চ্যালেঞ্জ: ৩টি এলোমেলো দিকে মাথা ঘোরাতে হয়; ছবি বা আগে থেকে ধারণ করা ভিডিও এটা মেলাতে পারে না ---
+function chStep(st,y){
+  const c=y>0.42&&y<0.58,L=y>0.66,R=y<0.34;
+  if(st.phase!=='turn')return st;
+  const need=st.steps[st.i];
+  if(!st.reached){if((need==='L'&&L)||(need==='R'&&R))st.reached=true;else if(L||R)st.wrong=true}
+  else if(c){st.reached=false;st.wrong=false;st.i++;if(st.i>=st.steps.length)st.phase='final'}
+  return st;
+}
+async function grabLive(v,set){
+  const o=new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.4});
+  const rnd=crypto.getRandomValues(new Uint8Array(3));
+  const st={steps:Array.from(rnd,x=>x&1?'L':'R'),i:0,reached:false,wrong:false,phase:'start'},out=[],t0=Date.now();
+  const say=n=>n==='L'?'⬅ Turn your head to your LEFT':'➡ Turn your head to your RIGHT';
+  while(Date.now()-t0<60000){
+    const r=await faceapi.detectSingleFace(v,o).withFaceLandmarks();
+    if(!r){set('No face found. Look straight at the camera, good light.');await wait(50);continue}
+    const y=yawOf(r.landmarks),c=y>0.42&&y<0.58;
+    if(st.phase==='start'||st.phase==='final'){
+      if(!c){set('Look straight at the camera');await wait(50);continue}
+      const f=await faceapi.detectSingleFace(v,o).withFaceLandmarks().withFaceDescriptor();
+      if(!f)continue;
+      out.push(Array.from(f.descriptor));
+      if(st.phase==='start')st.phase='turn';else return out;
+      continue;
+    }
+    chStep(st,y);
+    set(st.phase==='turn'?(st.reached?'Good. Now look straight again':say(st.steps[st.i])+' ('+(st.i+1)+'/'+st.steps.length+')')+(st.wrong?' – other direction!':''):'Look straight at the camera');
+    await wait(40);
+  }
+  throw new Error('Liveness challenge not completed. Follow the instructions on screen.');
 }
 const stop=s=>s&&s.getTracks().forEach(x=>x.stop());
 const info=(id,x)=>msg(id,x,true);
@@ -232,23 +273,23 @@ async function vFace(){
   $('view').innerHTML=`<div class="max-w-lg space-y-3 rounded-xl border border-slate-200 bg-white p-4"><h2 class="font-semibold">${NAV.face[lang==='bn'?1:0]}</h2>
   <label class="block text-sm font-medium text-slate-700">Employee<select id="fe" class="input mt-1"><option value=""></option>${emps.map(e=>`<option value="${esc(e.id)}">${esc(e.employee_code+' – '+e.full_name+(e.face_enrolled==='true'?' ✓':''))}</option>`).join('')}</select></label>
   <label class="flex items-start gap-2 text-sm"><input id="fc" type="checkbox" class="mt-1"><span>The employee has given consent to store their face template for attendance.</span></label>
-  <video id="vid" class="hidden w-full rounded-lg bg-black" playsinline muted></video><button id="fb" class="btn w-full">Start face registration</button><button id="fd" class="btn2 w-full">Delete stored face data of selected employee</button><div id="fs"></div></div>`;
+  <video id="vid" class="hidden w-full rounded-lg bg-black" style="transform:scaleX(-1)" playsinline muted></video><button id="fb" class="btn w-full">Start face registration</button><button id="fd" class="btn2 w-full">Delete stored face data of selected employee</button><div id="fs"></div></div>`;
   $('fd').onclick=async()=>{if(!$('fe').value)return msg('fs','Select an employee.');if(!confirm('Delete stored face data?'))return;try{await api('deleteFace',{employee_id:$('fe').value});msg('fs','Face data deleted.',true)}catch(e){msg('fs',e.message)}};
   $('fb').onclick=async()=>{
     if(!$('fe').value||!$('fc').checked)return msg('fs','Select an employee and confirm consent.');
     const b=$('fb');b.disabled=true;let s;
-    try{await loadFA(x=>info('fs',x));s=await camStart($('vid'));const d=await grab($('vid'),x=>info('fs',x),5);
+    try{await loadFA(x=>info('fs',x));s=await camStart($('vid'));const d=await grab($('vid'),x=>info('fs',x),5,false);
       await api('enrollFace',{employee_id:$('fe').value,descriptors:d,consent:true});msg('fs','Face registered.',true)}
     catch(e){msg('fs',e.message)}finally{stop(s);b.disabled=false}};
 }
 async function vLive(){
   $('view').innerHTML=`<div class="max-w-lg space-y-3 rounded-xl border border-slate-200 bg-white p-4"><h2 class="font-semibold">${NAV.live[lang==='bn'?1:0]}</h2>
-  <video id="vid" class="hidden w-full rounded-lg bg-black" playsinline muted></video>
+  <video id="vid" class="hidden w-full rounded-lg bg-black" style="transform:scaleX(-1)" playsinline muted></video>
   ${H.includes(user.role)?'<button id="lf" class="btn w-full">Scan face (check-in / check-out)</button>':''}<button id="ls" class="btn2 w-full">Check-in / check-out without face (my own account)</button><div id="lm"></div></div>`;
   const show=r=>msg('lm',`${r.type==='check_in'?'Check-in':'Check-out'} successful – ${r.name} (${r.code}) at ${r.time}${r.status==='Late'?' – Late':''}`,true);
   $('ls').onclick=async()=>{try{show(await api('selfAttendance'))}catch(e){msg('lm',e.message)}};
   if($('lf'))$('lf').onclick=async()=>{const b=$('lf');b.disabled=true;let s;
-    try{await loadFA(x=>info('lm',x));s=await camStart($('vid'));const d=await grab($('vid'),x=>info('lm',x),1);show(await api('faceAttendance',{descriptor:d[0]}))}
+    try{await loadFA(x=>info('lm',x));s=await camStart($('vid'));const d=await grabLive($('vid'),x=>info('lm',x));show(await api('faceAttendance',{descriptors:d}))}
     catch(e){msg('lm',e.message)}finally{stop(s);b.disabled=false}};
 }
 const vPerm=async()=>{
