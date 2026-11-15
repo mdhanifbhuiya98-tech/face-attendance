@@ -2,9 +2,10 @@
 const READ_ACTIONS = new Set(['ping', 'dashboard', 'list']);
 
 export async function callSheets<T = any>(action: string, payload: Record<string, any> = {}): Promise<T> {
-  const url = process.env.GOOGLE_APPS_SCRIPT_URL;
-  const secret = process.env.GOOGLE_APPS_SCRIPT_SECRET;
-  if (!url || !secret) throw new Error('GOOGLE_APPS_SCRIPT_URL / GOOGLE_APPS_SCRIPT_SECRET সেট করা নেই');
+  const url = process.env.GOOGLE_APPS_SCRIPT_URL?.trim();
+  const secret = process.env.GOOGLE_APPS_SCRIPT_SECRET?.trim();
+  if (!url) throw new Error('GOOGLE_APPS_SCRIPT_URL পাওয়া যায়নি (নাম, Environment ও Redeploy দেখুন)');
+  if (!secret) throw new Error('GOOGLE_APPS_SCRIPT_SECRET পাওয়া যায়নি (নাম, Environment ও Redeploy দেখুন)');
   const retries = READ_ACTIONS.has(action) ? 2 : 0; // লেখার কাজ রিট্রাই হয় না (ডুপ্লিকেট এড়াতে)
   let last: any;
   for (let i = 0; i <= retries; i++) {
