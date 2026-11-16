@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Face Registration</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<style>.btn{background:#1d4ed8;color:#fff;border-radius:.5rem;padding:.75rem 1rem;font-size:.95rem;font-weight:600;width:100%}.btn:disabled{opacity:.6}</style>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+<main class="mx-auto max-w-md p-4">
+<div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+<h1 class="text-xl font-bold text-blue-900">Face Registration · ফেস রেজিস্ট্রেশন</h1>
+<div id="box" class="mt-4 space-y-3 text-sm">…</div>
+</div></main>
+<script>
+const $=id=>document.getElementById(id),esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const T=new URLSearchParams(location.search).get('t')||'';
+const call=async b=>{const r=await fetch('/api/enroll',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({t:T,...b})});let j;try{j=await r.json()}catch(e){throw new Error('Server error')}if(!j.ok)throw new Error(j.error||'Error');return j.data};
+const msg=(t,ok)=>{const m=$('m');if(m)m.innerHTML=`<p class="rounded-lg px-3 py-2 ${ok?'bg-blue-50 text-blue-800':'bg-red-50 text-red-700'}">${esc(t)}</p>`};
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+const ear=p=>(dist(p[1],p[5])+dist(p[2],p[4]))/(2*dist(p[0],p[3]));
+const yawOf=l=>{const P=l.positions;return (P[30].x-P[0].x)/(P[16].x-P[0].x)};
+const stdv=a=>{const m=a.reduce((x,y)=>x+y,0)/a.length;return Math.sqrt(a.reduce((x,y)=>x+(y-m)*(y-m),0)/a.length)};
+const PASSIVE_T=0.012;
+// নির্দেশ ছাড়া লাইভনেস: স্বাভাবিক পলক বা মুখের (চোখ/ঠোঁট) স্বাভাবিক নড়াচড়া
+function newPassive(){
+  const E=[],M=[];let base=0,low=0,blink=false;
+  return r=>{
+    const P=r.landmarks.positions,e=(ear(r.landmarks.getLeftEye())+ear(r.landmarks.getRightEye()))/2,m=dist(P[62],P[66])/dist(P[36],P[45]);
+    E.push(e);M.push(m);if(E.length>30){E.shift();M.shift()}
+    base=base===0?e:Math.max(base*0.995,e);
+    if(e<base*0.8)low++;else{if(low>=1)blink=true;low=0}
+    const score=E.length>=6?Math.max(stdv(E),stdv(M)):0;
+    return {live:blink||score>PASSIVE_T,blink,score};
+  };
+}
+async function loadFA(){
+  await new Promise((ok,no)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.js';s.onload=ok;s.onerror=()=>no(new Error('Could not load the face library'));document.head.appendChild(s)});
+  const M='https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/model/';
+  await Promise.all([faceapi.nets.tinyFaceDetector.loadFromUri(M),faceapi.nets.faceLandmark68Net.loadFromUri(M),faceapi.nets.faceRecognitionNet.loadFromUri(M)]);
+}
+async function capture(v,need){
+  const o=new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.4});
+  let pl=newPassive(),live=false,out=[],t0=Date.now();
+  while(Date.now()-t0<40000){
+    const r=await faceapi.detectSingleFace(v,o).withFaceLandmarks();
+    if(!r){msg('Looking for your face… আপনার মুখ খুঁজছি…',true);await wait(60);continue}
+    if(!live){const s=pl(r);live=s.live;if(!live){msg(Date.now()-t0>4000?'Look at the camera naturally, good light.':'Checking…',true);await wait(30);continue}}
+    const y=yawOf(r.landmarks);if(y<0.35||y>0.65){msg('Look straight at the camera. সোজা ক্যামেরার দিকে তাকান।',true);await wait(60);continue}
+    const f=await faceapi.detectSingleFace(v,o).withFaceLandmarks().withFaceDescriptor();
+    if(!f)continue;out.push(Array.from(f.descriptor));msg('Captured '+out.length+'/'+need+' – hold still. স্থির থাকুন।',true);
+    if(out.length>=need)return out;await wait(600);
+  }
+  throw new Error('Could not capture a clear live face. Try better light and face the camera. / ভালো আলোতে আবার চেষ্টা করুন।');
+}
+function snapshot(v){const k=Math.min(1,256/Math.max(v.videoWidth,v.videoHeight)),c=document.createElement('canvas');c.width=Math.round(v.videoWidth*k);c.height=Math.round(v.videoHeight*k);c.getContext('2d').drawImage(v,0,0,c.width,c.height);return c.toDataURL('image/jpeg',0.8)}
+(async()=>{
+  try{
+    const e=await call({action:'info'});
+    $('box').innerHTML=`<p>Hello <b>${esc(e.name)}</b> (${esc(e.code||'')}). Register your face for office attendance.<br>আপনার অফিস হাজিরার জন্য ফেস রেজিস্টার করুন।</p>
+    <label class="flex items-start gap-2"><input id="c" type="checkbox" class="mt-1"><span>I agree that my face template is stored securely for attendance, and my photo may be used as my profile picture. / আমি হাজিরার জন্য আমার ফেস টেমপ্লেট সংরক্ষণে ও আমার ছবি প্রোফাইল ছবি হিসেবে ব্যবহারে সম্মত।</span></label>
+    <video id="v" class="hidden w-full rounded-lg bg-black" style="transform:scaleX(-1)" playsinline muted></video>
+    <button id="go" class="btn">Start · শুরু করুন</button><div id="m"></div>
+    <p class="text-xs text-slate-500">Only you should use this link. It works once. / এই লিঙ্ক শুধু আপনি ব্যবহার করবেন; একবারই চলে।</p>`;
+    $('go').onclick=async()=>{
+      if(!$('c').checked)return msg('Please tick the consent box. / সম্মতি টিক দিন।');
+      $('go').disabled=true;let s;
+      try{
+        msg('Loading… অপেক্ষা করুন…',true);await loadFA();
+        if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error('Camera not available. Open this link in Chrome over HTTPS.');
+        s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'}});const v=$('v');v.srcObject=s;v.classList.remove('hidden');await v.play();
+        const d=await capture(v,5);const photo=snapshot(v);
+        msg('Saving…',true);
+        await call({action:'submit',consent:true,descriptors:d,photo});
+        v.classList.add('hidden');$('go').classList.add('hidden');msg('Done! Your face is registered. You can close this page. / সম্পন্ন! আপনার ফেস রেজিস্টার হয়েছে।',true);
+      }catch(er){msg(er.message);$('go').disabled=false}finally{if(s)s.getTracks().forEach(x=>x.stop())}
+    };
+  }catch(er){$('box').innerHTML=`<p class="rounded-lg bg-red-50 px-3 py-2 text-red-700">${esc(er.message)}</p>`}
+})();
+</script></body></html>

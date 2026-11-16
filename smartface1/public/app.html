@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SmartFace HR</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script>tailwind.config={theme:{extend:{colors:{brand:{50:'#eff6ff',100:'#dbeafe',600:'#1d4ed8',700:'#1e40af',900:'#172554'}}}}}</script>
+<style>
+.input{width:100%;border:1px solid #cbd5e1;border-radius:.5rem;padding:.6rem .75rem;font-size:.875rem;background:#fff}
+.input:focus{outline:2px solid #bfdbfe;border-color:#1d4ed8}
+.btn{background:#1d4ed8;color:#fff;border-radius:.5rem;padding:.6rem 1rem;font-size:.875rem;font-weight:600}
+.btn:hover{background:#1e40af}.btn:disabled{opacity:.6}
+.btn2{border:1px solid #cbd5e1;border-radius:.5rem;padding:.4rem .75rem;font-size:.8rem;background:#fff}
+</style>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+<div id="root" class="min-h-screen"></div>
+<script>
+/* ---------- ভাষা ---------- */
+const D={
+en:{app:'SmartFace HR & Attendance',login:'Sign in',email:'Email',password:'Password',name:'Full name',wait:'Please wait…',
+setupTitle:'First-time setup',setupKey:'Setup key',create:'Create administrator',welcome:'Welcome',logout:'Sign out',
+employees:'Total employees',present:'Present today',absent:'Absent today',late:'Late today',soon:'Coming in a later phase',
+dashboard:'Dashboard',users:'Users',account:'Account',attendance:'Attendance',leave:'Leave',payroll:'Payroll',reports:'Reports',
+role:'Role',status:'Status',active:'Active',inactive:'Inactive',lastLogin:'Last login',addUser:'Add user',save:'Save user',
+deactivate:'Deactivate',activate:'Activate',oldPw:'Current password',newPw:'New password (10+ characters)',changePw:'Change password',
+pwChanged:'Password changed.',userAdded:'User added.',camTitle:'Camera check',camText:'Face attendance needs camera access. Test it on this device now.',
+camBtn:'Test camera',camOk:'Camera works on this device.',camFail:'Camera is blocked here: ',camHint:'If this is blocked inside the Apps Script page, the face features need the page to be hosted separately.',
+r_super_admin:'Super Administrator',r_hr_admin:'HR Administrator',r_hr_manager:'HR Manager',r_dept_manager:'Department Manager',r_employee:'Employee',
+sessionEnd:'Session expired. Please sign in again.',dataNote:'Live from your Google Sheet'},
+bn:{app:'স্মার্টফেস এইচআর ও অ্যাটেনডেন্স',login:'সাইন ইন',email:'ইমেইল',password:'পাসওয়ার্ড',name:'পূর্ণ নাম',wait:'অপেক্ষা করুন…',
+setupTitle:'প্রথমবার সেটআপ',setupKey:'সেটআপ কী',create:'অ্যাডমিন তৈরি করুন',welcome:'স্বাগতম',logout:'সাইন আউট',
+employees:'মোট কর্মী',present:'আজ উপস্থিত',absent:'আজ অনুপস্থিত',late:'আজ দেরিতে',soon:'পরবর্তী ফেজে আসছে',
+dashboard:'ড্যাশবোর্ড',users:'ইউজার',account:'অ্যাকাউন্ট',attendance:'হাজিরা',leave:'ছুটি',payroll:'বেতন',reports:'রিপোর্ট',
+role:'ভূমিকা',status:'অবস্থা',active:'সক্রিয়',inactive:'নিষ্ক্রিয়',lastLogin:'শেষ লগইন',addUser:'ইউজার যোগ করুন',save:'ইউজার সংরক্ষণ',
+deactivate:'নিষ্ক্রিয় করুন',activate:'সক্রিয় করুন',oldPw:'বর্তমান পাসওয়ার্ড',newPw:'নতুন পাসওয়ার্ড (১০+ অক্ষর)',changePw:'পাসওয়ার্ড বদলান',
+pwChanged:'পাসওয়ার্ড বদলানো হয়েছে।',userAdded:'ইউজার যোগ হয়েছে।',camTitle:'ক্যামেরা পরীক্ষা',camText:'ফেস অ্যাটেনডেন্সের জন্য ক্যামেরা লাগবে। এই ডিভাইসে এখন পরীক্ষা করুন।',
+camBtn:'ক্যামেরা পরীক্ষা করুন',camOk:'এই ডিভাইসে ক্যামেরা কাজ করছে।',camFail:'এখানে ক্যামেরা বন্ধ: ',camHint:'Apps Script পেজের ভেতরে ক্যামেরা বন্ধ থাকলে ফেস ফিচারের জন্য পেজটি আলাদা জায়গায় হোস্ট করতে হবে।',
+r_super_admin:'সুপার অ্যাডমিন',r_hr_admin:'এইচআর অ্যাডমিন',r_hr_manager:'এইচআর ম্যানেজার',r_dept_manager:'বিভাগীয় ম্যানেজার',r_employee:'কর্মী',
+sessionEnd:'সেশন শেষ। আবার সাইন ইন করুন।',dataNote:'আপনার গুগল শিট থেকে সরাসরি'}};
+
+/* ---------- ছোট সহায়ক ---------- */
+const mem={};
+const S={get:k=>{try{return sessionStorage.getItem(k)}catch(e){return mem[k]||null}},set:k=>0};
+function store(k,v){try{v==null?sessionStorage.removeItem(k):sessionStorage.setItem(k,v)}catch(e){mem[k]=v}}
+function pref(k,v){try{if(v!==undefined)localStorage.setItem(k,v);return localStorage.getItem(k)}catch(e){if(v!==undefined)mem[k]=v;return mem[k]||null}}
+let lang=pref('lang')||'en', user=null, page='dashboard';
+const t=k=>D[lang][k]||k;
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const $=id=>document.getElementById(id);
+async function api(action,payload){
+  let r;
+  try{r=await fetch('/api/rpc',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({action,payload:payload||{}})});}
+  catch(e){throw new Error('Network error')}
+  if(r.status===401){let m='Session expired';try{m=(await r.json()).error||m}catch(e){}$('root').innerHTML=`<div class="p-8"><p class="mb-3 rounded-lg bg-red-50 p-3 text-red-700">${esc(m)}</p><a class="btn inline-block" href="/login">Sign in</a></div>`;return new Promise(()=>{})}
+  let j;try{j=await r.json()}catch(e){throw new Error('Server error ('+r.status+')')}
+  if(!j.ok)throw new Error(j.error||'Error');
+  return j.data;
+}
+function setLang(l){lang=l;pref('lang',l);document.documentElement.lang=l;user?renderApp():boot(true)}
+const langBox=()=>`<div class="flex gap-1 rounded-lg border border-slate-200 bg-white p-0.5">${['en','bn'].map(l=>`<button onclick="setLang('${l}')" class="px-2.5 py-1 text-xs font-medium rounded ${lang===l?'bg-brand-600 text-white':'text-slate-600'}">${l==='en'?'EN':'বাংলা'}</button>`).join('')}</div>`;
+const field=(id,label,type='text')=>`<label class="block text-sm font-medium text-slate-700">${label}<input id="${id}" type="${type}" class="input mt-1" autocomplete="off"></label>`;
+const msg=(id,text,ok)=>{const e=$(id);if(e)e.innerHTML=text?`<p class="rounded-lg px-3 py-2 text-sm ${ok?'bg-green-50 text-green-700':'bg-red-50 text-red-700'}" role="alert">${esc(text)}</p>`:''};
+async function run(btn,msgId,fn){btn.disabled=true;const old=btn.textContent;btn.textContent=t('wait');msg(msgId,'');
+  try{await fn()}catch(e){if(/Session expired/.test(e.message)){store('tk',null);user=null;boot();return}msg(msgId,e.message)}
+  btn.disabled=false;btn.textContent=old}
+
+/* ---------- শুরু ---------- */
+async function boot(){
+  $('root').innerHTML='<div class="p-10 text-center text-slate-500">…</div>';
+  try{user=await api('me');renderApp()}catch(e){$('root').innerHTML=`<p class="p-8 text-red-700">${esc(e.message)}</p>`}
+}
+function card(title,body){return `<main class="flex min-h-screen items-center justify-center bg-gradient-to-b from-brand-50 to-white p-4"><div class="w-full max-w-sm"><div class="mb-4 flex justify-end">${langBox()}</div><div class="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm"><h1 class="mb-1 text-xl font-bold text-brand-900">${t('app')}</h1><p class="mb-6 text-sm text-slate-500">${title}</p><div class="space-y-4">${body}<div id="m"></div></div></div></div></main>`}
+function renderLogin(){
+  $('root').innerHTML=card(t('login'),field('e',t('email'),'email')+field('p',t('password'),'password')+`<button id="go" class="btn w-full">${t('login')}</button>`);
+  const go=()=>run($('go'),'m',async()=>{const r=await api('login',{email:$('e').value,password:$('p').value});store('tk',r.token);mem.tk=r.token;user=r.user;page='dashboard';renderApp()});
+  $('go').onclick=go;$('p').onkeydown=e=>{if(e.key==='Enter')go()};
+}
+function renderSetup(){
+  $('root').innerHTML=card(t('setupTitle'),field('n',t('name'))+field('e',t('email'),'email')+field('p',t('password')+' (10+)','password')+field('k',t('setupKey'),'password')+`<button id="go" class="btn w-full">${t('create')}</button>`);
+  $('go').onclick=()=>run($('go'),'m',async()=>{await api('setup',{name:$('n').value,email:$('e').value,password:$('p').value,setupKey:$('k').value});renderLogin()});
+}
+
+/* ---------- মূল অ্যাপ ---------- */
+function renderApp(){
+  const ok=k=>ACC[k]===null||ACC[k].includes(user.role);
+  const nv=k=>NAV[k][lang==='bn'?1:0];
+  $('root').innerHTML=`<div class="flex min-h-screen flex-col md:flex-row">
+  <aside class="bg-brand-900 text-white md:w-64"><div class="px-5 py-4 text-lg font-bold">SmartFace HR</div>
+  <nav class="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-col">${Object.keys(NAV).filter(ok).map(k=>`<button onclick="go('${k}')" class="whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm ${page===k?'bg-white/15 font-semibold':'hover:bg-white/10'}">${nv(k)}</button>`).join('')}</nav></aside>
+  <main class="min-w-0 flex-1"><header class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-5 py-3">
+  <div class="text-sm text-slate-600">${t('welcome')}, <b class="text-slate-900">${esc(user.name)}</b> <span class="ml-1 rounded bg-brand-50 px-2 py-0.5 text-xs text-brand-700">${t('r_'+user.role)}</span></div>
+  <div class="flex items-center gap-3">${langBox()}<button class="text-sm text-slate-600" onclick="logout()">${t('logout')}</button></div></header>
+  <section id="view" class="p-5"></section></main></div>`;
+  if(!ok(page))page='dashboard';
+  guard(VIEWS[page])();
+}
+function go(p){page=p;liveRun++;renderApp()}
+async function logout(){try{await fetch('/api/auth/logout',{method:'POST'})}catch(e){}location.href='/login'}
+const guard=fn=>async()=>{try{await fn()}catch(e){if(/Session expired/.test(e.message)){store('tk',null);user=null;boot()}else $('view').innerHTML=`<p class="text-red-700">${esc(e.message)}</p>`}};
+
+const vDashSimple=guard(async()=>{
+  $('view').innerHTML='…';const d=await api('dashboard');
+  $('view').innerHTML=`<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">${['employees','present','absent','late'].map(k=>`<div class="rounded-xl border border-slate-200 bg-white p-4"><div class="text-3xl font-bold text-brand-700">${esc(d[k])}</div><div class="mt-1 text-sm text-slate-500">${t(k)}</div></div>`).join('')}</div><p class="mt-4 text-xs text-slate-400">${t('dataNote')}</p>`;
+});
+
+const vUsers=guard(async()=>{
+  const list=await api('listUsers');
+  const roleOpts=['super_admin','hr_admin','hr_manager','dept_manager','employee'].filter(r=>r!=='super_admin'||user.role==='super_admin').map(r=>`<option value="${r}">${t('r_'+r)}</option>`).join('');
+  $('view').innerHTML=`<div class="grid gap-5 lg:grid-cols-3"><div class="overflow-x-auto rounded-xl border border-slate-200 bg-white lg:col-span-2"><table class="w-full text-sm"><thead class="bg-slate-50 text-left text-slate-500"><tr><th class="p-3">${t('name')}</th><th class="p-3">${t('role')}</th><th class="p-3">${t('status')}</th><th class="p-3">${t('lastLogin')}</th><th></th></tr></thead><tbody>
+  ${list.map(u=>`<tr class="border-t border-slate-100"><td class="p-3"><div class="font-medium">${esc(u.name)}</div><div class="text-xs text-slate-500">${esc(u.email)}</div></td><td class="p-3">${t('r_'+u.role)}</td><td class="p-3">${u.active==='true'?t('active'):t('inactive')}</td><td class="p-3 text-xs">${esc((u.last_login||'').slice(0,16).replace('T',' '))}</td><td class="p-3">${u.id===user.id?'':`<button class="btn2" onclick="toggleUser('${esc(u.id)}',${u.active!=='true'})">${u.active==='true'?t('deactivate'):t('activate')}</button>`}</td></tr>`).join('')}</tbody></table></div>
+  <div class="space-y-3 rounded-xl border border-slate-200 bg-white p-4"><h2 class="font-semibold">${t('addUser')}</h2>${field('un',t('name'))}${field('ue',t('email'),'email')}${field('up',t('password')+' (10+)','password')}<label class="block text-sm font-medium text-slate-700">${t('role')}<select id="ur" class="input mt-1">${roleOpts}</select></label><button id="ua" class="btn w-full">${t('save')}</button><div id="m"></div></div></div>`;
+  $('ua').onclick=()=>run($('ua'),'m',async()=>{await api('createUser',{name:$('un').value,email:$('ue').value,password:$('up').value,role:$('ur').value});vUsers();setTimeout(()=>msg('m',t('userAdded'),true),50)});
+});
+async function toggleUser(id,active){try{await api('setUserActive',{id,active});vUsers()}catch(e){alert(e.message)}}
+
+function vAccount(){
+  $('view').innerHTML=`<div class="grid gap-5 md:grid-cols-2"><div class="space-y-3 rounded-xl border border-slate-200 bg-white p-4"><h2 class="font-semibold">${t('changePw')}</h2>${field('op',t('oldPw'),'password')}${field('np',t('newPw'),'password')}<button id="cp" class="btn w-full">${t('changePw')}</button><div id="m"></div></div>
+  <div class="space-y-3 rounded-xl border border-slate-200 bg-white p-4"><h2 class="font-semibold">${t('camTitle')}</h2><p class="text-sm text-slate-600">${t('camText')}</p><video id="vid" class="hidden w-full rounded-lg bg-black" style="transform:scaleX(-1)" playsinline muted></video><button id="cam" class="btn w-full">${t('camBtn')}</button><div id="m2"></div></div></div>`;
+  $('cp').onclick=()=>run($('cp'),'m',async()=>{await api('changePassword',{oldPassword:$('op').value,newPassword:$('np').value});$('op').value=$('np').value='';msg('m',t('pwChanged'),true)});
+  $('cam').onclick=async()=>{
+    try{
+      if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error('getUserMedia unavailable');
+      const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'}});
+      const v=$('vid');v.srcObject=s;v.classList.remove('hidden');await v.play();msg('m2',t('camOk'),true);
+    }catch(e){$('m2').innerHTML=`<p class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">${esc(t('camFail')+e.message)}<br><span class="text-xs">${t('camHint')}</span></p>`}
+  };
+}
+
+/* ================= মডিউল ================= */
+const H=['super_admin','hr_admin','hr_manager'],A=['super_admin','hr_admin'],ROLES5=['super_admin','hr_admin','hr_manager','dept_manager','employee'];
+const NAV={dashboard:['Dashboard','ড্যাশবোর্ড'],employees:['Employees','কর্মী'],face:['Face Registration','ফেস রেজিস্ট্রেশন'],live:['Live Attendance','লাইভ হাজিরা'],history:['Attendance History','হাজিরার ইতিহাস'],departments:['Departments','বিভাগ'],designations:['Designations','পদবি'],shifts:['Shift Management','শিফট ব্যবস্থাপনা'],leave:['Leave Management','ছুটি ব্যবস্থাপনা'],payroll:['Payroll','বেতন'],holidays:['Holidays','ছুটির দিন'],reports:['Attendance Reports','হাজিরা রিপোর্ট'],notifications:['Notifications','নোটিফিকেশন'],kiosks:['Kiosk Devices','কিয়স্ক ডিভাইস'],settings:['Settings','সেটিংস'],permissions:['User Permissions','ইউজার পারমিশন'],audit:['Audit Logs','অডিট লগ']};
+const ACC={dashboard:null,employees:[...H,'dept_manager'],face:H,live:null,history:null,departments:null,designations:null,shifts:null,leave:null,payroll:A,holidays:null,reports:[...H,'dept_manager'],notifications:null,kiosks:A,settings:null,permissions:A,audit:A};
+const WR={employees:H,departments:H,designations:H,shifts:H,holidays:H,notifications:H,kiosk_devices:A,payroll_records:A,leave_applications:null,company_settings:A};
+const CF={
+employees:[['full_name','Full name','t'],['phone','Phone','t'],['email','Email (must match login email for self attendance)','t'],['department_id','Department','r','departments','name'],['designation_id','Designation','r','designations','name'],['shift_id','Shift','r','shifts','name'],['joining_date','Joining date','d'],['employment_type','Employment type','s',['Permanent','Contract','Intern','Part-time']],['employment_status','Status','s',['Active','Archived']],['salary','Salary (৳)','n'],['present_address','Present address','t'],['emergency_contact','Emergency contact','t']],
+departments:[['name','Department name','t']],designations:[['name','Designation','t']],
+shifts:[['name','Shift name','t'],['start_time','Start (HH:MM)','t'],['end_time','End (HH:MM)','t'],['break_minutes','Break (min)','n'],['grace_minutes','Grace (min)','n'],['days','Applicable days','t']],
+holidays:[['name','Holiday','t'],['date','Date','d'],['type','Type','s',['Public','Government','Weekly','Company','Special']]],
+leave_applications:[['employee_id','Employee','r','employees','full_name'],['type','Leave type','s',['Casual','Sick','Annual','Earned','Emergency','Maternity','Paternity','Unpaid']],['from_date','From','d'],['to_date','To','d'],['reason','Reason','t'],['status','Status','s',['Pending','Approved','Rejected','Cancelled']]],
+payroll_records:[['employee_id','Employee','r','employees','full_name'],['month','Month (YYYY-MM)','t'],['basic','Basic','n'],['allowances','Allowances','n'],['bonus','Bonus','n'],['overtime','Overtime pay','n'],['deductions','Deductions (tax etc.)','n'],['status','Payment status','s',['Draft','Approved','Paid']]],
+notifications:[['title','Title','t'],['message','Message','t']],
+kiosk_devices:[['name','Device name','t'],['location','Location','t'],['status','Status','s',['Active','Disabled']]],
+company_settings:[['key','Setting','t'],['value','Value','t']],
+audit_logs:[['created_at','When','t'],['user_id','User ID','t'],['action','Action','t'],['table_name','Table','t'],['record_id','Record','t']]};
+
+const BDT=n=>'৳'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
+const avatar=(id,name,s=36)=>id?`<img src="/api/photo?id=${encodeURIComponent(id)}" loading="lazy" class="inline-block rounded-full object-cover" style="width:${s}px;height:${s}px" alt="">`:`<span class="inline-flex items-center justify-center rounded-full bg-brand-100 font-semibold text-brand-700" style="width:${s}px;height:${s}px;font-size:${Math.round(s/2.4)}px">${esc((name||'?').trim().charAt(0).toUpperCase())}</span>`;
+const badge=s=>`<span class="rounded-md px-2 py-0.5 text-xs font-medium ${({Pending:'bg-amber-50 text-amber-700',Approved:'bg-green-50 text-green-700',Rejected:'bg-red-50 text-red-700',Late:'bg-red-50 text-red-700',Present:'bg-green-50 text-green-700'})[s]||'bg-slate-100 text-slate-600'}">${esc(s)}</span>`;
+const dm=s=>{const d=new Date(s+'T00:00:00');return isNaN(d)?esc(s):d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})};
+function resizeImg(file,max=320){return new Promise((res,rej)=>{const img=new Image();img.onload=()=>{const k=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement('canvas');c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext('2d').drawImage(img,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',0.8))};img.onerror=()=>rej(new Error('Invalid image'));img.src=URL.createObjectURL(file)})}
+const REG={};
+async function crud(table,title,o={}){
+  const host=$(o.host||'view'),all=CF[table],F=all.filter(f=>!(o.hide||[]).includes(f[0])),refs={};
+  for(const f of all)if(f[2]==='r'&&!refs[f[3]])refs[f[3]]=await api('list',{table:f[3]}).catch(()=>[]);
+  const rows=await api('list',{table});
+  const w=table in WR?WR[table]:[],can=w===null||w.includes(user.role),edit=can&&(w!==null||H.includes(user.role));
+  REG[table]={rows,F,refs,title,o};
+  const cell=v=>String(v).startsWith('__AV__')?(a=>avatar(a[0],a[1],30))(String(v).slice(6).split('|')):esc(v);
+  const nm=(f,v)=>f[2]==='r'?((refs[f[3]].find(x=>x.id===v)||{})[f[4]]||''):v;
+  const cols=[...(o.avatar?[['',r=>'__AV__'+(r.photo_file_id||'')+'|'+(r.full_name||'')]]:[]),...(o.pre||[]).map(k=>[k,r=>r[k]]),...all.map(f=>[f[1].split(' (')[0],r=>nm(f,r[f[0]])]),...(o.post||[]).map(k=>[k,r=>r[k]])];
+  host.innerHTML=`<div class="mb-3 flex items-center justify-between"><h2 class="text-lg font-semibold">${esc(title)}</h2>${can?`<button class="btn" onclick="crudForm('${table}',-1)">+ Add</button>`:''}</div><div id="cf_${table}"></div>
+  <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white"><table class="w-full text-sm"><thead class="bg-slate-50 text-left text-slate-500"><tr>${cols.map(c=>`<th class="p-3">${esc(c[0])}</th>`).join('')}${edit?'<th></th>':''}</tr></thead><tbody>
+  ${rows.map((r,i)=>`<tr class="border-t border-slate-100">${cols.map(c=>`<td class="p-3">${cell(c[1](r))}</td>`).join('')}${edit?`<td class="whitespace-nowrap p-3"><button class="btn2" onclick="crudForm('${table}',${i})">Edit</button> <button class="btn2" onclick="crudDel('${table}',${i})">Delete</button> ${o.rowActions?o.rowActions(r,i):''}</td>`:''}</tr>`).join('')||`<tr><td class="p-6 text-center text-slate-400" colspan="${cols.length+1}">—</td></tr>`}</tbody></table></div>`;
+}
+function crudForm(table,i){
+  const {rows,F,refs}=REG[table],r=i>=0?rows[i]:{};
+  const inp=f=>{const v=esc(r[f[0]]||''),id=`f_${table}_${f[0]}`;
+    if(f[2]==='s')return `<select id="${id}" class="input mt-1">${(i<0?['',...f[3]]:f[3]).map(o=>`<option ${o===r[f[0]]?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
+    if(f[2]==='r')return `<select id="${id}" class="input mt-1"><option value=""></option>${refs[f[3]].map(o=>`<option value="${esc(o.id)}" ${o.id===r[f[0]]?'selected':''}>${esc(o[f[4]])}</option>`).join('')}</select>`;
+    return `<input id="${id}" type="${f[2]==='d'?'date':f[2]==='n'?'number':'text'}" value="${v}" class="input mt-1">`};
+  $('cf_'+table).innerHTML=`<div class="mb-4 rounded-xl border border-slate-200 bg-white p-4"><div class="grid gap-3 md:grid-cols-3">${F.map(f=>`<label class="block text-sm font-medium text-slate-700">${esc(f[1])}${inp(f)}</label>`).join('')}</div><div class="mt-3 flex gap-2"><button class="btn" id="sv_${table}" onclick="crudSave('${table}',${i})">Save</button><button class="btn2" onclick="$('cf_${table}').innerHTML=''">Cancel</button></div><div id="cm_${table}" class="mt-2"></div></div>`;
+}
+async function crudSave(table,i){
+  const R=REG[table],row=i>=0?{id:R.rows[i].id}:{};
+  R.F.forEach(f=>row[f[0]]=$(`f_${table}_${f[0]}`).value);
+  try{await api('save',{table,row});await crud(table,R.title,R.o)}catch(e){if(/Session expired/.test(e.message)){store('tk',null);user=null;return boot()}msg('cm_'+table,e.message)}
+}
+async function crudDel(table,i){
+  if(!confirm('Delete?'))return;const R=REG[table];
+  try{await api('remove',{table,id:R.rows[i].id});await crud(table,R.title,R.o)}catch(e){alert(e.message)}
+}
+
+function empPhoto(i){
+  const r=REG.employees.rows[i],inp=document.createElement('input');inp.type='file';inp.accept='image/*';
+  inp.onchange=async()=>{try{const du=await resizeImg(inp.files[0]);await api('uploadPhoto',{employee_id:r.id,dataUrl:du});await crud('employees',REG.employees.title,REG.employees.o)}catch(e){alert(e.message)}};
+  inp.click();
+}
+async function empLink(i){
+  const r=REG.employees.rows[i];
+  try{
+    const x=await api('createEnrollLink',{employee_id:r.id});
+    const msgText=encodeURIComponent('Hello '+x.name+', please register your face for attendance using this link (valid '+x.hours+' hours, one time): '+x.url);
+    $('cf_employees').innerHTML=`<div class="mb-4 rounded-xl border border-brand-100 bg-brand-50 p-4 text-sm"><b>Face registration link for ${esc(x.name)}</b> (one-time, ${x.hours} hours)<div class="mt-2 flex flex-wrap gap-2"><input id="elk" readonly class="input flex-1" value="${esc(x.url)}"><button class="btn" onclick="navigator.clipboard.writeText($('elk').value);this.textContent='Copied'">Copy</button><a class="btn2" target="_blank" rel="noopener" href="https://wa.me/?text=${msgText}">WhatsApp</a></div><p class="mt-2 text-xs text-slate-500">Send this link privately to the employee. They open it on their own phone and look at the camera.</p></div>`;
+  }catch(e){alert(e.message)}
+}
+const C=(tb,ti,o)=>()=>crud(tb,ti,o);
+
+/* ---- হাজিরা ইতিহাস ও রিপোর্ট ---- */
+function attView(tools){return async()=>{
+  const rows=await api('list',{table:'attendance_records'});
+  $('view').innerHTML=`<div class="mb-3 flex flex-wrap items-end gap-3"><h2 class="mr-auto text-lg font-semibold">${NAV[tools?'reports':'history'][lang==='bn'?1:0]}</h2>
+  <label class="text-xs text-slate-500">From<input id="af" type="date" class="input"></label><label class="text-xs text-slate-500">To<input id="at" type="date" class="input"></label>${tools?'<button class="btn" id="csv">CSV</button>':''}</div><div id="asum" class="mb-3 text-sm text-slate-600"></div><div id="atab"></div>`;
+  let cur=[];
+  const draw=()=>{const f=$('af').value||'0000',to=$('at').value||'9999';
+    cur=rows.filter(r=>r.date>=f&&r.date<=to).sort((a,b)=>b.date.localeCompare(a.date)||b.check_in.localeCompare(a.check_in));
+    $('asum').textContent=`Records: ${cur.length} · Late: ${cur.filter(r=>r.status==='Late').length} · Late minutes: ${cur.reduce((s,r)=>s+(+r.late_minutes||0),0)}`;
+    $('atab').innerHTML=`<div class="overflow-x-auto rounded-xl border border-slate-200 bg-white"><table class="w-full text-sm"><thead class="bg-slate-50 text-left text-slate-500"><tr>${['Date','Employee','Check-in','Check-out','Status','Late min','Method'].map(x=>`<th class="p-3">${x}</th>`).join('')}</tr></thead><tbody>${cur.map(r=>`<tr class="border-t border-slate-100">${[r.date,r.employee_name,r.check_in,r.check_out,r.status,r.late_minutes,r.method].map(x=>`<td class="p-3">${esc(x)}</td>`).join('')}</tr>`).join('')||'<tr><td class="p-6 text-center text-slate-400" colspan="7">—</td></tr>'}</tbody></table></div>`};
+  $('af').onchange=$('at').onchange=draw;draw();
+  if(tools)$('csv').onclick=()=>{const q=v=>'"'+String(v||'').replace(/"/g,'""')+'"';
+    const txt='\ufeff'+[['Date','Employee','Check-in','Check-out','Status','Late min','Method'],...cur.map(r=>[r.date,r.employee_name,r.check_in,r.check_out,r.status,r.late_minutes,r.method])].map(r=>r.map(q).join(',')).join('\n');
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type:'text/csv'}));a.download='attendance.csv';a.click()};
+}}
+
+/* ---- ফেস (face-api.js, ব্রাউজারে) ---- */
+let FA=null;
+async function loadFA(set){
+  if(FA)return;set('Loading face models…');
+  await new Promise((ok,no)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.js';s.onload=ok;s.onerror=()=>no(new Error('Could not load the face library'));document.head.appendChild(s)});
+  const M='https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/model/';
+  await Promise.all([faceapi.nets.tinyFaceDetector.loadFromUri(M),faceapi.nets.faceLandmark68Net.loadFromUri(M),faceapi.nets.faceRecognitionNet.loadFromUri(M)]);FA=1;
+}
+async function camStart(v){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error('Camera not available (HTTPS and permission needed)');
+  const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'}});v.srcObject=s;v.classList.remove('hidden');await v.play();return s;
+}
+const ear=p=>{const d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);return(d(p[1],p[5])+d(p[2],p[4]))/(2*d(p[0],p[3]))};
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+// লাইভনেস (বেসিক): চোখের পলক অথবা মাথা একপাশে ঘুরিয়ে আবার সামনে আনা। ভিডিও রিপ্লে ঠেকাতে যথেষ্ট নয়।
+function blinkDetector(){let base=0,low=0,done=false;return e=>{base=base===0?e:Math.max(base*0.995,e);if(e<base*0.8){low++}else{if(low>=1)done=true;low=0}return done}}
+const yawOf=l=>{const P=l.positions;return (P[30].x-P[0].x)/(P[16].x-P[0].x)};
+function liveDetector(){const b=blinkDetector();let turned=false,done=false;
+  return r=>{const e=(ear(r.landmarks.getLeftEye())+ear(r.landmarks.getRightEye()))/2,y=yawOf(r.landmarks);
+    if(b(e))done=true;
+    if(y<0.32||y>0.68)turned=true;else if(turned&&y>0.4&&y<0.6)done=true;
+    return {done,e,y}}}
+// live=false: HR-এর সামনে তত্ত্বাবধানে এনরোলমেন্ট (চ্যালেঞ্জ ছাড়া); live=true: হাজিরার সময় চ্যালেঞ্জ লাগে
+async function grab(v,set,need,live){
+  const o=new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.4});
+  const ld=liveDetector();let ok=!live,out=[],t0=Date.now();
+  while(Date.now()-t0<45000){
+    if(!ok){
+      const r=await faceapi.detectSingleFace(v,o).withFaceLandmarks();
+      if(!r){set('No face found. Look straight at the camera, good light.');await wait(50);continue}
+      const s=ld(r);ok=s.done;
+      if(!ok){set('Blink once OR turn your head to one side and back. (eye '+s.e.toFixed(2)+', turn '+s.y.toFixed(2)+')');continue}
+    }
+    const f=await faceapi.detectSingleFace(v,o).withFaceLandmarks().withFaceDescriptor();
+    if(!f){set('No face found. Look straight at the camera.');await wait(100);continue}
+    if(!live){const yy=yawOf(f.landmarks);if(yy<0.3||yy>0.7){set('Look more straight at the camera');await wait(100);continue}}
+    out.push(Array.from(f.descriptor));set('Captured '+out.length+'/'+need+(live?'':' – hold still, slightly vary your angle'));
+    if(out.length>=need)return out;await wait(live?400:700);
+  }
+  throw new Error(live?'Liveness check not completed. Blink slowly or turn your head to the side and back.':'Could not capture a clear face. Try better light.');
+}
+
+// --- র‍্যান্ডম চ্যালেঞ্জ: ৩টি এলোমেলো দিকে মাথা ঘোরাতে হয়; ছবি বা আগে থেকে ধারণ করা ভিডিও এটা মেলাতে পারে না ---
+function chStep(st,y){
+  const c=y>0.42&&y<0.58,L=y>0.66,R=y<0.34;
+  if(st.phase!=='turn')return st;
+  const need=st.steps[st.i];
+  if(!st.reached){if((need==='L'&&L)||(need==='R'&&R))st.reached=true;else if(L||R)st.wrong=true}
+  else if(c){st.reached=false;st.wrong=false;st.i++;if(st.i>=st.steps.length)st.phase='final'}
+  return st;
+}
+async function grabLive(v,set){
+  const o=new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.4});
+  const rnd=crypto.getRandomValues(new Uint8Array(3));
+  const st={steps:Array.from(rnd,x=>x&1?'L':'R'),i:0,reached:false,wrong:false,phase:'start'},out=[],t0=Date.now();
+  const say=n=>n==='L'?'⬅ Turn your head to your LEFT':'➡ Turn your head to your RIGHT';
+  while(Date.now()-t0<60000){
+    const r=await faceapi.detectSingleFace(v,o).withFaceLandmarks();
+    if(!r){set('No face found. Look straight at the camera, good light.');await wait(50);continue}
+    const y=yawOf(r.landmarks),c=y>0.42&&y<0.58;
+    if(st.phase==='start'||st.phase==='final'){
+      if(!c){set('Look straight at the camera');await wait(50);continue}
+      const f=await faceapi.detectSingleFace(v,o).withFaceLandmarks().withFaceDescriptor();
+      if(!f)continue;
+      out.push(Array.from(f.descriptor));
+      if(st.phase==='start')st.phase='turn';else return out;
+      continue;
+    }
+    chStep(st,y);
+    set(st.phase==='turn'?(st.reached?'Good. Now look straight again':say(st.steps[st.i])+' ('+(st.i+1)+'/'+st.steps.length+')')+(st.wrong?' – other direction!':''):'Look straight at the camera');
+    await wait(40);
+  }
+  throw new Error('Liveness challenge not completed. Follow the instructions on screen.');
+}
+const stop=s=>s&&s.getTracks().forEach(x=>x.stop());
+const info=(id,x)=>msg(id,x,true);
+
+async function vFace(){
+  const emps=(await api('list',{table:'employees'})).filter(e=>e.employment_status!=='Archived');
+  $('view').innerHTML=`<div class="max-w-lg space-y-3 rounded-xl border border-slate-200 bg-white p-4"><h2 class="font-semibold">${NAV.face[lang==='bn'?1:0]}</h2>
+  <label class="block text-sm font-medium text-slate-700">Employee<select id="fe" class="input mt-1"><option value=""></option>${emps.map(e=>`<option value="${esc(e.id)}">${esc(e.employee_code+' – '+e.full_name+(e.face_enrolled==='true'?' ✓':''))}</option>`).join('')}</select></label>
+  <label class="flex items-start gap-2 text-sm"><input id="fc" type="checkbox" class="mt-1"><span>The employee has given consent to store their face template for attendance.</span></label>
+  <video id="vid" class="hidden w-full rounded-lg bg-black" style="transform:scaleX(-1)" playsinline muted></video><button id="fb" class="btn w-full">Start face registration</button><button id="fd" class="btn2 w-full">Delete stored face data of selected employee</button><div id="fs"></div></div>`;
+  $('fd').onclick=async()=>{if(!$('fe').value)return msg('fs','Select an employee.');if(!confirm('Delete stored face data?'))return;try{await api('deleteFace',{employee_id:$('fe').value});msg('fs','Face data deleted.',true)}catch(e){msg('fs',e.message)}};
+  $('fb').onclick=async()=>{
+    if(!$('fe').value||!$('fc').checked)return msg('fs','Select an employee and confirm consent.');
+    const b=$('fb');b.disabled=true;let s;
+    try{await loadFA(x=>info('fs',x));s=await camStart($('vid'));const d=await grab($('vid'),x=>info('fs',x),5,false);
+      await api('enrollFace',{employee_id:$('fe').value,descriptors:d,consent:true});msg('fs','Face registered.',true)}
+    catch(e){msg('fs',e.message)}finally{stop(s);b.disabled=false}};
+}
+
+const LIVENESS_PASSIVE=true; // নির্দেশ ছাড়া লাইভনেস (স্বাভাবিক পলক/মুখের নড়াচড়া); false করলে বন্ধ
+const PASSIVE_T=0.012;
+const stdv2=a=>{const m=a.reduce((x,y)=>x+y,0)/a.length;return Math.sqrt(a.reduce((x,y)=>x+(y-m)*(y-m),0)/a.length)};
+function newPassive(){
+  const dd=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),E=[],M=[];let base=0,low=0,blink=false;
+  return r=>{
+    const P=r.landmarks.positions,e=(ear(r.landmarks.getLeftEye())+ear(r.landmarks.getRightEye()))/2,m=dd(P[62],P[66])/dd(P[36],P[45]);
+    E.push(e);M.push(m);if(E.length>30){E.shift();M.shift()}
+    base=base===0?e:Math.max(base*0.995,e);
+    if(e<base*0.8)low++;else{if(low>=1)blink=true;low=0}
+    const score=E.length>=6?Math.max(stdv2(E),stdv2(M)):0;
+    return {live:blink||score>PASSIVE_T,blink,score};
+  };
+}
+const LIVENESS_CHALLENGE=false; // true করলে হাজিরায় মাথা ঘোরানোর চ্যালেঞ্জ চালু হয়
+let liveRun=0;
+async function vLive(){
+  const me=++liveRun;
+  $('view').innerHTML=`<div class="mx-auto max-w-lg space-y-3 rounded-xl border border-slate-200 bg-white p-4"><h2 class="font-semibold">${NAV.live[lang==='bn'?1:0]}</h2>
+  <video id="vid" class="hidden w-full rounded-lg bg-black" style="transform:scaleX(-1)" playsinline muted></video><div id="lres"></div>
+  ${H.includes(user.role)?'<button id="lf" class="btn w-full">Start automatic face attendance</button>':''}<button id="ls" class="btn2 w-full">Check-in / check-out without face (my own account)</button><div id="lm"></div></div>`;
+  const big=(r,ok)=>$('lres').innerHTML=ok?`<div class="rounded-xl bg-green-50 p-5 text-center"><div class="text-4xl">✅</div><div class="mt-2 text-xl font-bold text-green-800">Welcome, ${esc(r.name)}</div><div class="text-sm text-green-700">${esc(r.code)} · ${r.type==='check_in'?'Check-in':'Check-out'} ${esc(r.time)}${r.status==='Late'?' · Late':''}</div></div>`:`<div class="rounded-xl bg-red-50 p-4 text-center text-sm text-red-700">${esc(r)}</div>`;
+  $('ls').onclick=async()=>{try{big(await api('selfAttendance'),true)}catch(e){msg('lm',e.message)}};
+  if(!$('lf'))return;
+  $('lf').onclick=async()=>{
+    const b=$('lf');b.disabled=true;b.textContent='Camera running…';let s;
+    try{
+      await loadFA(x=>info('lm',x));s=await camStart($('vid'));
+      const o=new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.5});
+      let pl=null,tp=0;
+      while(me===liveRun&&document.body.contains($('vid'))){
+        if(document.hidden){await wait(500);continue}
+        const r=await faceapi.detectSingleFace($('vid'),o).withFaceLandmarks();
+        if(!r){pl=null;info('lm','Waiting for a face…');await wait(250);continue}
+        if(r.detection.box.width<$('vid').videoWidth*0.2){info('lm','Please come a little closer');await wait(200);continue}
+        const y=yawOf(r.landmarks);if(y<0.35||y>0.65){info('lm','Look at the camera');await wait(150);continue}
+        if(LIVENESS_PASSIVE){
+          if(!pl){pl=newPassive();tp=Date.now()}
+          const s=pl(r);
+          if(!s.live){
+            if(Date.now()-tp>7000){big('Liveness check failed. Face the camera naturally in good light, or use the own-account check-in button.',false);pl=null;await wait(3500);$('lres').innerHTML='';continue}
+            info('lm',Date.now()-tp>2500?'Look at the camera naturally… (motion '+s.score.toFixed(3)+')':'Checking…');await wait(40);continue}
+        }
+        info('lm','Checking…');
+        let d;
+        if(LIVENESS_CHALLENGE)d=await grabLive($('vid'),x=>info('lm',x));
+        else{const f1=await faceapi.detectSingleFace($('vid'),o).withFaceLandmarks().withFaceDescriptor();await wait(120);const f2=await faceapi.detectSingleFace($('vid'),o).withFaceLandmarks().withFaceDescriptor();if(!f1||!f2)continue;d=[Array.from(f1.descriptor),Array.from(f2.descriptor)]}
+        try{big(await api('faceAttendance',{descriptors:d}),true);msg('lm','')}catch(e){big(e.message,false)}
+        await wait(3500);$('lres').innerHTML='';pl=null;
+      }
+    }catch(e){msg('lm',e.message)}finally{stop(s);if($('lf')){b.disabled=false;b.textContent='Start automatic face attendance'}}
+  };
+}
+const vPerm=async()=>{
+  await vUsers();
+  $('view').insertAdjacentHTML('beforeend',`<h3 class="mb-2 mt-6 font-semibold">Module access by role</h3><div class="overflow-x-auto rounded-xl border border-slate-200 bg-white"><table class="w-full text-sm"><thead class="bg-slate-50 text-left text-slate-500"><tr><th class="p-3">Module</th>${ROLES5.map(r=>`<th class="p-3">${t('r_'+r)}</th>`).join('')}</tr></thead><tbody>${Object.keys(NAV).map(k=>`<tr class="border-t border-slate-100"><td class="p-3">${NAV[k][0]}</td>${ROLES5.map(r=>`<td class="p-3">${ACC[k]===null||ACC[k].includes(r)?'✓':''}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
+};
+const vSet=async()=>{vAccount();if(A.includes(user.role)){$('view').insertAdjacentHTML('beforeend','<div id="cs" class="mt-5"></div>');await crud('company_settings','Company settings',{host:'cs'});try{const x=await (await fetch('/api/health')).json();$('cs').insertAdjacentHTML('beforebegin',`<div class="mt-5 rounded-xl border border-slate-200 bg-white p-4 text-sm"><b>System status</b><br>Database: ${x.db.ok?'✓':'✗ '+esc(x.db.error)}<br>Google Sheets: ${x.sheets.ok?'✓':'✗ '+esc(x.sheets.error)}<br>Face encryption key: ${x.faceKey?'✓':'✗ missing FACE_ENCRYPTION_KEY'}</div>`)}catch(e){}}};
+
+let lastDash=null,stTab='onLeave';
+const isMgr=()=>['super_admin','hr_admin','hr_manager','dept_manager'].includes(user.role);
+function drawDash(d){
+  const st=d.status[stTab]||[],card=(icon,title,big,sub,foot)=>`<div class="rounded-xl border border-slate-200 bg-white p-4"><div class="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700"><span class="text-lg">${icon}</span>${title}</div><div class="text-3xl font-bold">${big}</div>${sub?`<div class="mt-1 text-xs text-slate-500">${sub}</div>`:''}<div class="mt-3 border-t border-slate-100 pt-2 text-xs text-slate-500">${foot}</div></div>`;
+  const p=d.payroll,pct=p&&p.net?Math.round(p.paidAmount/p.net*100):0,can=H.includes(user.role);
+  $('view').innerHTML=`<div class="grid gap-4 md:grid-cols-3">
+  ${card('👥','Total Employees',d.employees.total,'',`Active: ${d.employees.active} · Inactive: ${d.employees.inactive}`)}
+  ${card('📅','Leave Requests',d.leave.pending,'pending approval',`Total requests: ${d.leave.total}`)}
+  ${p?card('💳','Payroll Completion',`${p.paidCount}<span class="text-lg text-slate-400">/${p.total}</span>`,p.month,`${p.remaining} payments remaining`):card('✅','Present Today',d.attendance.present,'',`Late: ${d.attendance.late}`)}</div>
+  <div class="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">${[['Present today',d.attendance.present,'text-green-700'],['Absent today',d.attendance.absent,'text-red-700'],['Late today',d.attendance.late,'text-amber-700'],['On leave',d.attendance.onLeave,'text-brand-700']].map(x=>`<div class="rounded-xl border border-slate-200 bg-white p-4"><div class="text-2xl font-bold ${x[2]}">${x[1]}</div><div class="text-sm text-slate-500">${x[0]}</div></div>`).join('')}</div>
+  <div class="mt-4 grid gap-4 lg:grid-cols-3"><div class="space-y-4 lg:col-span-2">
+   <div class="rounded-xl border border-slate-200 bg-white p-4"><h2 class="mb-3 font-semibold">Leave Management</h2><div class="overflow-x-auto"><table class="w-full text-sm"><thead class="text-left text-slate-500"><tr><th class="p-2">Employee</th><th class="p-2">Type</th><th class="p-2">Date</th><th class="p-2">Status</th><th class="p-2">Action</th></tr></thead><tbody>
+   ${d.leaves.map(l=>`<tr class="border-t border-slate-100"><td class="p-2"><span class="flex items-center gap-2">${avatar(l.photo,l.name,28)}${esc(l.name)}</span></td><td class="p-2">${esc(l.type)}</td><td class="p-2">${dm(l.from)} – ${dm(l.to)}</td><td class="p-2">${badge(l.status)}</td><td class="p-2">${l.status==='Pending'&&can?`<button class="btn2" title="Reject" onclick="leaveAct('${esc(l.id)}','Rejected')">✕</button> <button class="btn2" title="Approve" onclick="leaveAct('${esc(l.id)}','Approved')">✓</button>`:''}</td></tr>`).join('')||'<tr><td class="p-4 text-center text-slate-400" colspan="5">—</td></tr>'}</tbody></table></div></div>
+   <div class="rounded-xl border border-slate-200 bg-white p-4"><h2 class="mb-3 font-semibold">Recent attendance</h2>${d.recent.map(a=>`<div class="flex items-center justify-between border-t border-slate-100 py-2 text-sm first:border-0"><span class="flex items-center gap-2">${avatar(a.photo,a.name,28)}${esc(a.name)}</span><span class="text-slate-500">${dm(a.date)} · ${esc(a.in||'')}${a.out?' → '+esc(a.out):''}</span>${badge(a.status)}</div>`).join('')||'<p class="text-sm text-slate-400">—</p>'}</div></div>
+  <div class="space-y-4"><div class="rounded-xl border border-slate-200 bg-white p-4"><h2 class="mb-3 font-semibold">Employee Status</h2><div class="mb-3 grid grid-cols-3 gap-1 rounded-lg bg-slate-100 p-1 text-xs">${[['onLeave','On Leave'],['inactive','Inactive'],['onboarding','On Boarding']].map(([k,l])=>`<button onclick="stTab='${k}';drawDash(lastDash)" class="rounded-md py-1.5 ${stTab===k?'bg-brand-600 font-semibold text-white':'text-slate-600'}">${l}</button>`).join('')}</div>
+   ${st.map(x=>`<div class="flex items-center gap-3 border-t border-slate-100 py-2 first:border-0">${avatar(x.photo,x.name,34)}<div><div class="text-sm font-medium">${esc(x.name)}</div><div class="text-xs text-slate-500">${esc(x.note)}</div></div></div>`).join('')||'<p class="py-4 text-center text-sm text-slate-400">—</p>'}</div>
+  ${p?`<div class="rounded-xl border border-slate-200 bg-white p-4"><h2 class="mb-2 font-semibold">Payroll Overview <span class="text-xs font-normal text-slate-500">${esc(p.month)}</span></h2><div class="text-xs text-slate-500">Total Payroll</div><div class="text-3xl font-bold">${BDT(p.net)}</div><div class="my-3 flex h-8 overflow-hidden rounded-lg bg-slate-200"><div class="bg-brand-600" style="width:${pct}%"></div></div><div class="flex justify-between text-sm"><span class="text-brand-700">● Paid</span><b>${BDT(p.paidAmount)}</b></div><div class="flex justify-between text-sm"><span class="text-slate-500">● Unpaid</span><b>${BDT(p.unpaidAmount)}</b></div><button class="btn2 mt-3 w-full" onclick="go('payroll')">View All</button></div>`:''}</div></div>
+  <p class="mt-3 text-xs text-slate-400">${t('dataNote')} · auto-refresh</p>`;
+}
+const vDash=guard(async()=>{
+  if(!isMgr())return vDashSimple();
+  lastDash=await api('dashboardFull');drawDash(lastDash);
+});
+async function leaveAct(id,status){try{await api('save',{table:'leave_applications',row:{id,status}});vDash()}catch(e){alert(e.message)}}
+
+// প্রায় রিয়েল-টাইম: খোলা পেজ প্রতি ১০ সেকেন্ডে নিজে আপডেট হয় (ফর্ম খোলা থাকলে বা ক্যামেরা পেজে নয়)
+const LIVE_PAGES=['dashboard','employees','history','reports','leave','payroll','holidays','notifications','departments','designations','shifts','audit','kiosks'];
+setInterval(()=>{
+  if(document.hidden||!user||!LIVE_PAGES.includes(page))return;
+  if(document.querySelector('#view input:focus,#view select:focus'))return;
+  if([...document.querySelectorAll('[id^=cf_]')].some(e=>e.innerHTML.trim()))return;
+  guard(VIEWS[page])();
+},10000);
+const VIEWS={dashboard:vDash,employees:C('employees','Employees',{avatar:true,pre:['employee_code'],post:['face_enrolled'],rowActions:(r,i)=>H.includes(user.role)?'<button class="btn2" onclick="empPhoto('+i+')">Photo</button> <button class="btn2" onclick="empLink('+i+')">Face link</button>':''}),face:vFace,live:vLive,history:attView(false),
+departments:C('departments','Departments'),designations:C('designations','Designations'),shifts:C('shifts','Shift Management'),
+leave:()=>crud('leave_applications','Leave Management',{hide:H.includes(user.role)?[]:['status','employee_id']}),
+payroll:C('payroll_records','Payroll',{post:['gross','net']}),holidays:C('holidays','Holidays'),reports:attView(true),notifications:C('notifications','Notifications'),
+kiosks:C('kiosk_devices','Kiosk Devices'),settings:vSet,permissions:vPerm,audit:C('audit_logs','Audit Logs',{})};
+
+boot();
+</script>
+</body>
+</html>
